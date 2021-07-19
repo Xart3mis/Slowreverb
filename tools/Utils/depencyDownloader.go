@@ -1,7 +1,7 @@
-package lib
+package SlowReverb
 
 import (
-	"SlowReverb/lib/Secrets"
+	"SlowReverb/tools/Secrets"
 	"archive/zip"
 	"encoding/json"
 	"fmt"
@@ -15,11 +15,11 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-const depPath string = `dependencies/bin/`
+const DependencyPath string = `dependencies/bin/`
 const ytdl = "youtube-dl.exe"
 const ffmpeg = "ffmpeg.zip"
 
-func checkAllDeps(client *http.Client) {
+func CheckAllDeps(client *http.Client) {
 	checkFolders()
 	checkFFmpeg(client)
 	checkYoutubeDl(client)
@@ -56,6 +56,9 @@ func checkFolders() {
 	if !exists(`dependencies/bin/`) {
 		os.MkdirAll("dependencies/bin/", os.ModePerm)
 	}
+	if !exists(`Output/`) {
+		os.MkdirAll("Output/", os.ModePerm)
+	}
 }
 
 func downloadFile(filepath string, url string) error {
@@ -91,22 +94,22 @@ func getYoutubeDl(client *http.Client) {
 	url := Secrets.YoutubeDlRelease
 	doc := Release{}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
-	checkErr(err)
+	CheckErr(err)
 
 	req.Header.Set("User-Agent", "SlowReverb-App")
 
 	resp, getErr := client.Do(req)
-	checkErr(getErr)
+	CheckErr(getErr)
 
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
 
 	body, readErr := ioutil.ReadAll(resp.Body)
-	checkErr(readErr)
+	CheckErr(readErr)
 
 	jsonErr := json.Unmarshal([]byte(body), &doc)
-	checkErr(jsonErr)
+	CheckErr(jsonErr)
 
 	ch := make(chan string)
 	go func() {
@@ -117,9 +120,9 @@ func getYoutubeDl(client *http.Client) {
 		}
 	}()
 
-	dlErr := downloadFile(depPath+ytdl, <-ch)
+	dlErr := downloadFile(DependencyPath+ytdl, <-ch)
 	fmt.Println("Download Finished")
-	checkErr(dlErr)
+	CheckErr(dlErr)
 }
 
 func checkYoutubeDl(client *http.Client) {
@@ -131,7 +134,7 @@ func checkYoutubeDl(client *http.Client) {
 			}
 		}
 		ch <- true
-	}(depPath + ytdl)
+	}(DependencyPath + ytdl)
 
 	if !<-ch {
 		fmt.Println("Youtube-dl dependency not found.")
@@ -143,22 +146,22 @@ func getFFmpeg(client *http.Client) {
 	url := Secrets.FFmpegRelease
 	doc := Release{}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
-	checkErr(err)
+	CheckErr(err)
 
 	req.Header.Set("User-Agent", "SlowReverb-App")
 
 	resp, getErr := client.Do(req)
-	checkErr(getErr)
+	CheckErr(getErr)
 
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
 
 	body, readErr := ioutil.ReadAll(resp.Body)
-	checkErr(readErr)
+	CheckErr(readErr)
 
 	jsonErr := json.Unmarshal([]byte(body), &doc)
-	checkErr(jsonErr)
+	CheckErr(jsonErr)
 
 	ch := make(chan string)
 	go func() {
@@ -173,7 +176,7 @@ func getFFmpeg(client *http.Client) {
 
 	dlErr := downloadFile(`dependencies/`+ffmpeg, <-ch)
 	fmt.Println("Download Finished")
-	checkErr(dlErr)
+	CheckErr(dlErr)
 	extractFFmpeg(`dependencies/` + ffmpeg)
 }
 
@@ -186,7 +189,7 @@ func checkFFmpeg(client *http.Client) {
 			}
 		}
 		ch <- true
-	}(`dependencies/` + ffmpeg)
+	}(`dependencies/bin/` + "ffmpeg.exe")
 
 	if !<-ch {
 		fmt.Println("FFmpeg dependency not found.")
@@ -243,44 +246,61 @@ func extractFFmpeg(yourZipFile string) error {
 	return nil
 }
 
-func Unzip(src string, dst string) ([]string, error) {
+func Unzip(src string, destination string) ([]string, error) {
 	var filenames []string
+
 	r, err := zip.OpenReader(src)
+
 	if err != nil {
-		return nil, err
+
+		return filenames, err
 	}
+
 	defer r.Close()
-	for f := range r.File {
-		dstpath := filepath.Join(dst, r.File[f].Name)
-		if !strings.HasPrefix(dstpath, filepath.Clean(dst)+string(os.PathSeparator)) {
-			return nil, fmt.Errorf("%s: illegal file path", src)
+
+	for _, f := range r.File {
+		fpath := filepath.Join(destination, f.Name)
+
+		if !strings.HasPrefix(fpath, filepath.Clean(destination)+string(os.PathSeparator)) {
+			return filenames, fmt.Errorf("%s is an illegal filepath", fpath)
 		}
-		if r.File[f].FileInfo().IsDir() {
-			if err := os.MkdirAll(dstpath, os.ModePerm); err != nil {
-				return nil, err
-			}
-		} else {
-			if rc, err := r.File[f].Open(); err != nil {
-				return nil, err
-			} else {
-				defer rc.Close()
-				if of, err := os.OpenFile(dstpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, r.File[f].Mode()); err != nil {
-					return nil, err
-				} else {
-					defer of.Close()
-					if _, err = io.Copy(of, rc); err != nil {
-						return nil, err
-					} else {
-						of.Close()
-						rc.Close()
-						filenames = append(filenames, dstpath)
-					}
-				}
-			}
+
+		filenames = append(filenames, fpath)
+
+		if f.FileInfo().IsDir() {
+
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+
+		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			return filenames, err
+		}
+
+		outFile, err := os.OpenFile(fpath,
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+			f.Mode())
+
+		if err != nil {
+
+			return filenames, err
+		}
+
+		rc, err := f.Open()
+
+		if err != nil {
+			return filenames, err
+		}
+
+		_, err = io.Copy(outFile, rc)
+
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return filenames, err
 		}
 	}
-	if len(filenames) == 0 {
-		return nil, fmt.Errorf("zip file is empty")
-	}
+
 	return filenames, nil
 }

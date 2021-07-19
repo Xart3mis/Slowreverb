@@ -1,9 +1,12 @@
 package main
 
 import (
-	"SlowReverb/lib"
+	""
+	"fmt"
 )
 
 func main() {
-	lib.Init(60)
+	client := lib.Init(60)
+	Result := lib.GetSong("forget not", "ne obliviscaris", client)
+	fmt.Println(Result)
 }

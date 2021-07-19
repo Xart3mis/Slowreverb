@@ -1,12 +1,14 @@
-package lib
+package SlowReverb
 
 import (
-	"SlowReverb/lib/Secrets"
+	"SlowReverb/tools/Secrets"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"time"
 )
 
@@ -124,12 +126,12 @@ type heightURLWidth struct {
 	Width  int    `json:"width"`
 }
 type Result struct {
-	Response  document
-	SourceURL string
-	Filename  string
+	Response  *document
+	SourceURL *string
+	Filename  *string
 }
 
-func checkErr(err error) {
+func CheckErr(err error) {
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -141,12 +143,11 @@ func Init(timeout int) *http.Client {
 	customTransport.MaxIdleConns = 100
 	customTransport.MaxConnsPerHost = 100
 	customTransport.MaxIdleConnsPerHost = 100
-
 	client := http.Client{
 		Timeout:   time.Duration(timeout) * time.Second,
 		Transport: customTransport,
 	}
-	checkAllDeps(&client)
+	CheckAllDeps(&client)
 	return &client
 }
 
@@ -155,24 +156,33 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 	search := Secrets.SearchUrl
 	search = fmt.Sprintf(search, url.QueryEscape(fmt.Sprintf("%s - %s", title, artist)), Secrets.Key)
 	req, err := http.NewRequest(http.MethodGet, search, nil)
-	checkErr(err)
+	CheckErr(err)
 
 	req.Header.Set("User-Agent", "SlowReverb-App")
 
 	resp, getErr := client.Do(req)
-	checkErr(getErr)
+	CheckErr(getErr)
 
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
 
 	body, readErr := ioutil.ReadAll(resp.Body)
-	checkErr(readErr)
+	CheckErr(readErr)
 
 	jsonErr := json.Unmarshal([]byte(body), &doc)
-	checkErr(jsonErr)
+	CheckErr(jsonErr)
 
 	fname := fmt.Sprintf("%s.%s", fmt.Sprintf("%s - %s", doc.Items[0].Snippet.Title, artist), "m4a")
+	os.Chdir(DependencyPath)
+	cmd := exec.Command("youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
+		"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", fname)
 
-	return &Result{Response: doc, SourceURL: search, Filename: fname}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	cmd.Run()
+
+	return &Result{Response: &doc, SourceURL: &search, Filename: &fname}
 }
