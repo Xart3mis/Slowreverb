@@ -1,7 +1,7 @@
-package SlowReverb
+package lib
 
 import (
-	"SlowReverb/tools/Secrets"
+	"SlowReverb/lib/Secrets"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -174,9 +175,24 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 	CheckErr(jsonErr)
 
 	fname := fmt.Sprintf("%s.%s", fmt.Sprintf("%s - %s", doc.Items[0].Snippet.Title, artist), "m4a")
+
 	os.Chdir(DependencyPath)
+
+	dir, _ := os.Getwd()
+	dT := strings.Split(dir, "\\")
+
+	dT = dT[:len(dT)-2]
+	dir = ""
+
+	for i := range dT {
+		dir += dT[i] + "/"
+	}
+
+	dir += "Temp/"
+	fname = dir + fname
+
 	cmd := exec.Command("youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
-		"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", fname)
+		"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", "-o", fname)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -185,4 +201,37 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 	cmd.Run()
 
 	return &Result{Response: &doc, SourceURL: &search, Filename: &fname}
+}
+
+func ModifySpeed(filename string, factor float64) string {
+
+	if factor < 0.5 || factor > 2.0 {
+		panic("speed factor must be between 0.5 and 2.0")
+	}
+
+	os.Chdir(DependencyPath)
+	dir, _ := os.Getwd()
+	dT := strings.Split(dir, "\\")
+
+	dT = dT[:len(dT)-2]
+	dir = ""
+
+	for i := range dT {
+		dir += dT[i] + "/"
+	}
+
+	dir += "Output/"
+	endFnameA := strings.Split(filename, "/")
+	endFname := endFnameA[len(endFnameA)-1]
+
+	cmd := exec.Command("ffmpeg.exe", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn",
+		dir+endFname)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	cmd.Run()
+
+	return dir + endFname
 }

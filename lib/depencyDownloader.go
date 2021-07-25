@@ -1,7 +1,7 @@
-package SlowReverb
+package lib
 
 import (
-	"SlowReverb/tools/Secrets"
+	"SlowReverb/lib/Secrets"
 	"archive/zip"
 	"encoding/json"
 	"fmt"
