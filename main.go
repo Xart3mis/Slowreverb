@@ -8,12 +8,12 @@ import (
 func main() {
 	client := lib.Init(60)
 	fmt.Println("Downloading Song:")
-	Result := lib.GetSong("4 morant", "doja cat", client)
+	Result := lib.GetSong("young", "vacations", client)
 	fmt.Println("Done.")
 	// file := *Result.Filename
 
 	fmt.Println("Slowing down audio:")
-	file := lib.ModifySpeed(*Result.Filename, 0.75)
+	file := lib.ModifySpeed(*Result.Filename, 0.76)
 	fmt.Println("Done.")
 
 	fmt.Println("\nApplying reverb 1:")
@@ -25,7 +25,7 @@ func main() {
 	fmt.Println("Done.")
 
 	fmt.Println("\nPitching down:")
-	file = lib.AlterPitch(file, 0.2, false)
+	file = lib.AlterPitch(file, 0.1, false)
 	fmt.Println("Done.")
 
 	fmt.Println("Playing song:")
