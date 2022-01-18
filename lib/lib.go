@@ -132,11 +132,51 @@ type Result struct {
 	Filename  *string
 }
 
+type rvrbtypes struct {
+	Hall struct {
+		Large_Hall  string
+		Medium_Hall string
+		Small_Hall  string
+	}
+	Chamber struct {
+		Large_Chamber  string
+		Medium_Chamber string
+		Small_Chamber  string
+		Vocal_Chamber  string
+	}
+}
+
+func ReverbTypes() rvrbtypes {
+	return rvrbtypes{
+		Hall: struct {
+			Large_Hall  string
+			Medium_Hall string
+			Small_Hall  string
+		}{
+			Large_Hall:  "1 Halls 01 Large Hall  M-to-S.wav",
+			Medium_Hall: "1 Halls 02 Medium Hall  M-to-S.wav",
+			Small_Hall:  "1 Halls 03 Small Hall  M-to-S.wav",
+		},
+		Chamber: struct {
+			Large_Chamber  string
+			Medium_Chamber string
+			Small_Chamber  string
+			Vocal_Chamber  string
+		}{
+			Large_Chamber:  "4 Chambers 01 Large Chamber  M-to-S.wav",
+			Medium_Chamber: "4 Chambers 02 Medium Chamber  M-to-S.wav",
+			Small_Chamber:  "4 Chambers 03 Small Chamber  M-to-S.wav",
+			Vocal_Chamber:  "4 Chambers 10 Vocal Chamber  M-to-S.wav",
+		},
+	}
+}
+
 func CheckErr(err error) {
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+
 }
 
 func Init(timeout int) *http.Client {
@@ -233,7 +273,7 @@ func ModifySpeed(filename string, factor float64) string {
 	return dir + endFname
 }
 
-func Reverberize(filename string, dryness int, wetness int, mix_ratio int) string {
+func Reverberize(filename string, dryness int, wetness int, mix_ratio int, reverb_type string) string {
 	if dryness > 10 {
 		panic("value for dryness must be 0-10")
 	}
@@ -257,7 +297,7 @@ func Reverberize(filename string, dryness int, wetness int, mix_ratio int) strin
 	endFname := endFnameA[len(endFnameA)-1]
 	endFname = "rvrbrzd_" + endFname
 
-	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-i", "../IRAF/big_hall_e001_m2s.wav", "-filter_complex",
+	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-i", fmt.Sprintf("../IRAF/%s", reverb_type), "-filter_complex",
 		fmt.Sprintf("[0] [1] afir=dry=%d:wet=%d [reverb]; [0] [reverb] amix=inputs=2:weights=%d 1", dryness, wetness, mix_ratio), dir+endFname)
 
 	cmd.Stdout = os.Stdout
