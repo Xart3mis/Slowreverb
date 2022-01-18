@@ -56,6 +56,9 @@ func checkFolders() {
 	if !exists(`dependencies/bin/`) {
 		os.MkdirAll("dependencies/bin/", os.ModePerm)
 	}
+	if !exists(`dependencies/IRAF/`) {
+		os.MkdirAll("dependencies/IRAF/", os.ModePerm)
+	}
 	if !exists(`Output/`) {
 		os.MkdirAll("Output/", os.ModePerm)
 	}
@@ -88,6 +91,10 @@ func downloadFile(filepath string, url string) error {
 		return err
 	}
 	return nil
+}
+
+func getIRaudioFiles(client *http.Client) {
+
 }
 
 func getYoutubeDl(client *http.Client) {
@@ -220,6 +227,7 @@ func copy(src, dst string) (int64, error) {
 	nBytes, err := io.Copy(destination, source)
 	return nBytes, err
 }
+
 func extractFFmpeg(yourZipFile string) error {
 	tmpDir, err := ioutil.TempDir(os.Getenv("TEMP"), "SR-")
 	if err != nil {

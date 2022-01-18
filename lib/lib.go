@@ -174,7 +174,7 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 	jsonErr := json.Unmarshal([]byte(body), &doc)
 	CheckErr(jsonErr)
 
-	fname := fmt.Sprintf("%s.%s", fmt.Sprintf("%s - %s", doc.Items[0].Snippet.Title, artist), "m4a")
+	fname := fmt.Sprintf("%s.%s", fmt.Sprintf("%s - %s", title, artist), "m4a")
 
 	os.Chdir(DependencyPath)
 
@@ -204,11 +204,6 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 }
 
 func ModifySpeed(filename string, factor float64) string {
-
-	if factor < 0.5 || factor > 2.0 {
-		panic("speed factor must be between 0.5 and 2.0")
-	}
-
 	os.Chdir(DependencyPath)
 	dir, _ := os.Getwd()
 	dT := strings.Split(dir, "\\")
@@ -221,10 +216,12 @@ func ModifySpeed(filename string, factor float64) string {
 	}
 
 	dir += "Output/"
+
 	endFnameA := strings.Split(filename, "/")
 	endFname := endFnameA[len(endFnameA)-1]
+	endFname = "slwd_" + endFname
 
-	cmd := exec.Command("ffmpeg.exe", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn",
+	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn",
 		dir+endFname)
 
 	cmd.Stdout = os.Stdout
@@ -234,4 +231,52 @@ func ModifySpeed(filename string, factor float64) string {
 	cmd.Run()
 
 	return dir + endFname
+}
+
+func Reverberize(filename string, dryness int, wetness int, mix_ratio int) string {
+	if dryness > 10 {
+		panic("value for dryness must be 0-10")
+	}
+	if wetness > 10 {
+		panic("value for wetness must be 0-10")
+	}
+	os.Chdir(DependencyPath)
+	dir, _ := os.Getwd()
+	dT := strings.Split(dir, "\\")
+
+	dT = dT[:len(dT)-2]
+	dir = ""
+
+	for i := range dT {
+		dir += dT[i] + "/"
+	}
+
+	dir += "Output/"
+
+	endFnameA := strings.Split(filename, "/")
+	endFname := endFnameA[len(endFnameA)-1]
+	endFname = "rvrbrzd_" + endFname
+
+	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-i", "../IRAF/big_hall_e001_m2s.wav", "-filter_complex",
+		fmt.Sprintf("[0] [1] afir=dry=%d:wet=%d [reverb]; [0] [reverb] amix=inputs=2:weights=%d 1", dryness, wetness, mix_ratio), dir+endFname)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	cmd.Run()
+
+	return dir + endFname
+}
+
+func Play(filename string) {
+	os.Chdir(DependencyPath)
+
+	cmd := exec.Command("ffplay.exe", "-nodisp", "-autoexit", filename)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	cmd.Run()
 }
