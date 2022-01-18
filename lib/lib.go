@@ -428,6 +428,53 @@ func Reverberize(filename string, dryness int, wetness int, mix_ratio int, rever
 	return dir + endFname
 }
 
+func AlterPitch(filename string, factor float64, verbose ...bool) string {
+	if factor > 1 || factor < 0 {
+		panic("Pitch factor must be [0 < f < 1]")
+	}
+	vb := false
+	if len(verbose) > 0 {
+		vb = verbose[0]
+	}
+
+	os.Chdir(DependencyPath)
+	dir, _ := os.Getwd()
+	dT := strings.Split(dir, "\\")
+
+	dT = dT[:len(dT)-2]
+	dir = ""
+
+	for i := range dT {
+		dir += dT[i] + "/"
+	}
+
+	dir += "Output/"
+
+	endFnameA := strings.Split(filename, "/")
+	endFname := endFnameA[len(endFnameA)-1]
+	endFname = "ptchd_" + endFname
+
+	ch := make(chan string)
+	go func() {
+		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-ar", "44100", "-af",
+			fmt.Sprintf("atempo=%f,asetrate=44100*%f", 1/(1-factor), (1-factor)), dir+endFname)
+	}()
+
+	timeRGX := regexp.MustCompile(`size=[\s\d]+.B\stime=[\d:\.]+\sbitrate=.+\/s\sspeed=.+x`)
+	for v := range ch {
+		match := timeRGX.MatchString(v)
+		if vb && !match {
+			fmt.Print(BACKSPACE + YELLOW_FG + v + RESET)
+		}
+		if match {
+			fmt.Print(BACKSPACE + GREEN_FG + v + RESET)
+		}
+	}
+	fmt.Println()
+
+	return dir + endFname
+}
+
 func Play(filename string, finished chan<- bool, verbose ...bool) {
 	vb := false
 	if len(verbose) > 0 {

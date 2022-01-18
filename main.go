@@ -8,11 +8,12 @@ import (
 func main() {
 	client := lib.Init(60)
 	fmt.Println("Downloading Song:")
-	Result := lib.GetSong("Vixen", "Destroy Boys", client, false)
+	Result := lib.GetSong("4 morant", "doja cat", client)
 	fmt.Println("Done.")
+	// file := *Result.Filename
 
 	fmt.Println("Slowing down audio:")
-	file := lib.ModifySpeed(*Result.Filename, 0.75, false)
+	file := lib.ModifySpeed(*Result.Filename, 0.75)
 	fmt.Println("Done.")
 
 	fmt.Println("\nApplying reverb 1:")
@@ -20,7 +21,11 @@ func main() {
 	fmt.Println("Done.")
 
 	fmt.Println("\nApplying reverb 2:")
-	file = lib.Reverberize(file, 10, 5, 14, lib.ReverbTypes().Hall.Medium_Hall)
+	file = lib.Reverberize(file, 10, 5, 10, lib.ReverbTypes().Chamber.Vocal_Chamber)
+	fmt.Println("Done.")
+
+	fmt.Println("\nPitching down:")
+	file = lib.AlterPitch(file, 0.2, false)
 	fmt.Println("Done.")
 
 	fmt.Println("Playing song:")
