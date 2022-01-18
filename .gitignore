@@ -1,4 +1,4 @@
 secrets*
-dependencies/
+dependencies/bin/*
 Output/*
 Temp/*
