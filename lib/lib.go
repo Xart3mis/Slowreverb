@@ -4,11 +4,14 @@ import (
 	"SlowReverb/lib/Secrets"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -179,6 +182,20 @@ func CheckErr(err error) {
 
 }
 
+const (
+	STDERRCH = iota
+	STDOUTCH = iota
+)
+
+const (
+	BACKSPACE  = "\r"
+	YELLOW_FG  = "\033[33m"
+	GREEN_FG   = "\033[32m"
+	MAGENTA_FG = "\033[35m"
+	CYAN_FG    = "\033[36m"
+	RESET      = "\033[0m"
+)
+
 func Init(timeout int) *http.Client {
 	customTransport := http.DefaultTransport.(*http.Transport).Clone()
 	customTransport.MaxIdleConns = 100
@@ -192,7 +209,12 @@ func Init(timeout int) *http.Client {
 	return &client
 }
 
-func GetSong(title string, artist string, client *http.Client) *Result {
+func GetSong(title string, artist string, client *http.Client, verbose ...bool) *Result {
+	vb := false
+	if len(verbose) > 0 {
+		vb = verbose[0]
+	}
+
 	doc := document{}
 	search := Secrets.SearchUrl
 	search = fmt.Sprintf(search, url.QueryEscape(fmt.Sprintf("%s - %s", title, artist)), Secrets.Key)
@@ -231,19 +253,33 @@ func GetSong(title string, artist string, client *http.Client) *Result {
 	dir += "Temp/"
 	fname = dir + fname
 
-	cmd := exec.Command("youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
-		"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", "-o", fname)
+	ch := make(chan string)
+	go func() {
+		RunCommandCh(ch, "\r\n", STDOUTCH, "youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
+			"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", "-o", fname)
+	}()
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	cmd.Run()
+	downloadRGX := regexp.MustCompile(`\[download\]\s+\d`)
+	for v := range ch {
+		match := downloadRGX.MatchString(v)
+		if vb && !match {
+			fmt.Print(BACKSPACE + YELLOW_FG + v + RESET)
+		}
+		if match {
+			fmt.Print(BACKSPACE + MAGENTA_FG + v + RESET)
+		}
+	}
+	fmt.Println()
 
 	return &Result{Response: &doc, SourceURL: &search, Filename: &fname}
 }
 
-func ModifySpeed(filename string, factor float64) string {
+func ModifySpeed(filename string, factor float64, verbose ...bool) string {
+	vb := false
+	if len(verbose) > 0 {
+		vb = verbose[0]
+	}
+
 	os.Chdir(DependencyPath)
 	dir, _ := os.Getwd()
 	dT := strings.Split(dir, "\\")
@@ -261,19 +297,93 @@ func ModifySpeed(filename string, factor float64) string {
 	endFname := endFnameA[len(endFnameA)-1]
 	endFname = "slwd_" + endFname
 
-	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn",
-		dir+endFname)
+	ch := make(chan string)
+	go func() {
+		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn", dir+endFname)
+	}()
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	cmd.Run()
+	timeRGX := regexp.MustCompile(`size=[\s\d]+.B\stime=[\d:\.]+\sbitrate=.+\/s\sspeed=.+x`)
+	for v := range ch {
+		match := timeRGX.MatchString(v)
+		if vb && !match {
+			fmt.Print(BACKSPACE + YELLOW_FG + v + RESET)
+		}
+		if match {
+			fmt.Print(BACKSPACE + GREEN_FG + v + RESET)
+		}
+	}
+	fmt.Println()
 
 	return dir + endFname
 }
 
-func Reverberize(filename string, dryness int, wetness int, mix_ratio int, reverb_type string) string {
+func RunCommandCh(stdoutCh chan<- string, cutset string, stdwch int, command string, flags ...string) error {
+	cmd := exec.Command(command, flags...)
+	cmd.Stdin = os.Stdin
+	var output io.ReadCloser
+	var err error
+
+	switch stdwch {
+	case STDERRCH:
+		output, err = cmd.StderrPipe()
+
+	case STDOUTCH:
+		output, err = cmd.StdoutPipe()
+
+	default:
+		output, err = cmd.StdoutPipe()
+	}
+	if err != nil {
+		return fmt.Errorf("RunCommand: cmd.StdoutPipe(): %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("RunCommand: cmd.Start(): %v", err)
+	}
+
+	go func() {
+		defer close(stdoutCh)
+		for {
+			buf := make([]byte, 1024)
+			n, err := output.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					log.Fatal(err)
+				}
+				if n == 0 {
+					break
+				}
+			}
+			text := strings.TrimSpace(string(buf[:n]))
+			for {
+				n := strings.IndexAny(text, cutset)
+				if n == -1 {
+					if len(text) > 0 {
+						stdoutCh <- text
+					}
+					break
+				}
+				stdoutCh <- text[:n]
+				if n == len(text) {
+					break
+				}
+				text = text[n+1:]
+			}
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("RunCommand: cmd.Wait(): %v", err)
+	}
+	return nil
+}
+
+func Reverberize(filename string, dryness int, wetness int, mix_ratio int, reverb_type string, verbose ...bool) string {
+	vb := false
+	if len(verbose) > 0 {
+		vb = verbose[0]
+	}
+
 	if dryness > 10 {
 		panic("value for dryness must be 0-10")
 	}
@@ -297,26 +407,50 @@ func Reverberize(filename string, dryness int, wetness int, mix_ratio int, rever
 	endFname := endFnameA[len(endFnameA)-1]
 	endFname = "rvrbrzd_" + endFname
 
-	cmd := exec.Command("ffmpeg.exe", "-y", "-i", filename, "-i", fmt.Sprintf("../IRAF/%s", reverb_type), "-filter_complex",
-		fmt.Sprintf("[0] [1] afir=dry=%d:wet=%d [reverb]; [0] [reverb] amix=inputs=2:weights=%d 1", dryness, wetness, mix_ratio), dir+endFname)
+	ch := make(chan string)
+	go func() {
+		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-i", fmt.Sprintf("../IRAF/%s", reverb_type), "-filter_complex",
+			fmt.Sprintf("[0] [1] afir=dry=%d:wet=%d [reverb]; [0] [reverb] amix=inputs=2:weights=%d 1", dryness, wetness, mix_ratio), dir+endFname)
+	}()
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	cmd.Run()
+	timeRGX := regexp.MustCompile(`size=[\s\d]+.B\stime=[\d:\.]+\sbitrate=.+\/s\sspeed=.+x`)
+	for v := range ch {
+		match := timeRGX.MatchString(v)
+		if vb && !match {
+			fmt.Print(BACKSPACE + YELLOW_FG + v + RESET)
+		}
+		if match {
+			fmt.Print(BACKSPACE + GREEN_FG + v + RESET)
+		}
+	}
+	fmt.Println()
 
 	return dir + endFname
 }
 
-func Play(filename string) {
+func Play(filename string, finished chan<- bool, verbose ...bool) {
+	vb := false
+	if len(verbose) > 0 {
+		vb = verbose[0]
+	}
+
 	os.Chdir(DependencyPath)
 
-	cmd := exec.Command("ffplay.exe", "-nodisp", "-autoexit", filename)
+	ch := make(chan string)
+	go func() {
+		RunCommandCh(ch, "\r\n", STDERRCH, "ffplay.exe", "-nodisp", "-autoexit", filename)
+	}()
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	cmd.Run()
+	timeRGX := regexp.MustCompile(`\d+\.\d+\sM-A`)
+	for v := range ch {
+		match := timeRGX.MatchString(v)
+		if vb && !match {
+			fmt.Print(BACKSPACE + YELLOW_FG + v + RESET)
+		}
+		if match {
+			fmt.Print(BACKSPACE + CYAN_FG + v + RESET)
+		}
+	}
+	fmt.Println()
+	finished <- true
 }
