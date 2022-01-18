@@ -94,7 +94,7 @@ func downloadFile(filepath string, url string) error {
 }
 
 func getIRaudioFiles(client *http.Client) {
-
+	panic("getIRaudioFiles not implemented yet")
 }
 
 func getYoutubeDl(client *http.Client) {
