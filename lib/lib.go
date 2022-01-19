@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"strings"
 	"time"
@@ -209,7 +210,7 @@ func Init(timeout int) *http.Client {
 	return &client
 }
 
-func GetSong(title string, artist string, client *http.Client, verbose ...bool) *Result {
+func GetSong(title string, artist string, client *http.Client, finished chan<- bool, verbose ...bool) *Result {
 	vb := false
 	if len(verbose) > 0 {
 		vb = verbose[0]
@@ -255,7 +256,7 @@ func GetSong(title string, artist string, client *http.Client, verbose ...bool) 
 
 	ch := make(chan string)
 	go func() {
-		RunCommandCh(ch, "\r\n", STDOUTCH, "youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
+		runCommandCh(ch, "\r\n", STDOUTCH, "youtube-dl.exe", *doc.Items[0].ID.VideoID, "-x", "--audio-quality", "0",
 			"--audio-format", "m4a", "--ffmpeg-location", "ffmpeg.exe", "-o", fname)
 	}()
 
@@ -274,7 +275,7 @@ func GetSong(title string, artist string, client *http.Client, verbose ...bool) 
 	return &Result{Response: &doc, SourceURL: &search, Filename: &fname}
 }
 
-func ModifySpeed(filename string, factor float64, verbose ...bool) string {
+func ModifySpeed(filename string, factor float64, finished chan<- bool, verbose ...bool) string {
 	vb := false
 	if len(verbose) > 0 {
 		vb = verbose[0]
@@ -299,7 +300,7 @@ func ModifySpeed(filename string, factor float64, verbose ...bool) string {
 
 	ch := make(chan string)
 	go func() {
-		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn", dir+endFname)
+		runCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-filter:a", fmt.Sprintf("atempo=%e", factor), "-vn", dir+endFname)
 	}()
 
 	timeRGX := regexp.MustCompile(`size=[\s\d]+.B\stime=[\d:\.]+\sbitrate=.+\/s\sspeed=.+x`)
@@ -317,7 +318,7 @@ func ModifySpeed(filename string, factor float64, verbose ...bool) string {
 	return dir + endFname
 }
 
-func RunCommandCh(stdoutCh chan<- string, cutset string, stdwch int, command string, flags ...string) error {
+func runCommandCh(stdoutCh chan<- string, cutset string, stdwch int, command string, flags ...string) error {
 	cmd := exec.Command(command, flags...)
 	cmd.Stdin = os.Stdin
 	var output io.ReadCloser
@@ -378,7 +379,7 @@ func RunCommandCh(stdoutCh chan<- string, cutset string, stdwch int, command str
 	return nil
 }
 
-func Reverberize(filename string, dryness int, wetness int, mix_ratio int, reverb_type string, verbose ...bool) string {
+func Reverberize(filename string, dryness int, wetness int, mix_ratio int, reverb_type string, finished chan<- bool, verbose ...bool) string {
 	vb := false
 	if len(verbose) > 0 {
 		vb = verbose[0]
@@ -409,7 +410,7 @@ func Reverberize(filename string, dryness int, wetness int, mix_ratio int, rever
 
 	ch := make(chan string)
 	go func() {
-		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-i", fmt.Sprintf("../IRAF/%s", reverb_type), "-filter_complex",
+		runCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-i", fmt.Sprintf("../IRAF/%s", reverb_type), "-filter_complex",
 			fmt.Sprintf("[0] [1] afir=dry=%d:wet=%d [reverb]; [0] [reverb] amix=inputs=2:weights=%d 1", dryness, wetness, mix_ratio), dir+endFname)
 	}()
 
@@ -428,7 +429,7 @@ func Reverberize(filename string, dryness int, wetness int, mix_ratio int, rever
 	return dir + endFname
 }
 
-func AlterPitch(filename string, factor float64, verbose ...bool) string {
+func AlterPitch(filename string, factor float64, finished chan<- bool, verbose ...bool) string {
 	if factor > 1 || factor < 0 {
 		panic("Pitch factor must be [0 < f < 1]")
 	}
@@ -456,7 +457,7 @@ func AlterPitch(filename string, factor float64, verbose ...bool) string {
 
 	ch := make(chan string)
 	go func() {
-		RunCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-ar", "44100", "-af",
+		runCommandCh(ch, "\r\n", STDERRCH, "ffmpeg.exe", "-y", "-i", filename, "-ar", "44100", "-af",
 			fmt.Sprintf("atempo=%f,asetrate=44100*%f", 1/(1-factor), (1-factor)), dir+endFname)
 	}()
 
@@ -485,7 +486,15 @@ func Play(filename string, finished chan<- bool, verbose ...bool) {
 
 	ch := make(chan string)
 	go func() {
-		RunCommandCh(ch, "\r\n", STDERRCH, "ffplay.exe", "-nodisp", "-autoexit", filename)
+		runCommandCh(ch, "\r\n", STDERRCH, "ffplay.exe", "-nodisp", "-autoexit", filename)
+	}()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		fmt.Println()
+		finished <- true
 	}()
 
 	timeRGX := regexp.MustCompile(`\d+\.\d+\sM-A`)
@@ -498,6 +507,7 @@ func Play(filename string, finished chan<- bool, verbose ...bool) {
 			fmt.Print(BACKSPACE + CYAN_FG + v + RESET)
 		}
 	}
+
 	fmt.Println()
 	finished <- true
 }
